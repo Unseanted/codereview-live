@@ -6,7 +6,7 @@ import { GitPullRequest, Code2, ArrowRight, Sparkles, Github, Zap, Shield } from
 import dynamic from "next/dynamic";
 import { ReviewOutput } from "./components/ReviewOutput";
 import { LoadingState } from "./components/LoadingState";
-import { ReviewResult } from "@/lib/openai";
+import { ReviewResult } from "@/lib/llm";
 
 const CodeMirrorEditor = dynamic(
   () => import("./components/CodeInput"),

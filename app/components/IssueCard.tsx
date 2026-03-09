@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp, FileCode } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ReviewItem } from "@/lib/openai";
+import { ReviewItem } from "@/lib/llm";
 import { SEVERITY_COLORS, SEVERITY_LABELS } from "@/lib/utils";
 
 interface IssueCardProps {

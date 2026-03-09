@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ReviewRequestSchema } from "@/lib/utils";
 import { parsePRUrl, fetchPRFiles, buildCodeContext } from "@/lib/github";
-import { reviewCode } from "@/lib/openai";
+import { reviewCodeFallback } from "@/lib/llm";
 
 export const maxDuration = 60; // allow up to 60s on Vercel
 
@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const result = await reviewCode(codeContent, context);
+    const result = await reviewCodeFallback(codeContent, context);
     return NextResponse.json(result);
   } catch (err) {
     console.error("[/api/review]", err);

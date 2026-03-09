@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { ReviewResult } from "@/lib/openai";
+import { ReviewResult } from "@/lib/llm";
 import { CATEGORY_CONFIG, SEVERITY_ORDER, CategoryKey } from "@/lib/utils";
 import { IssueCard } from "./IssueCard";
 import { CheckCircle2, AlertTriangle, Star } from "lucide-react";
