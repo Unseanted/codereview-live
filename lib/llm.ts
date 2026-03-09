@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import Anthropic from "@anthropic-ai/sdk";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export interface ReviewItem {
   severity: "critical" | "major" | "minor" | "info";
@@ -120,13 +121,79 @@ export async function reviewWithClaude(codeContent: string, context?: string): P
   return parseProviderResponse(response.content[0].text);
 }
 
+export async function reviewWithGemini(codeContent: string, context?: string): Promise<ReviewResult> {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("Missing GEMINI_API_KEY");
+  }
+  
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+  const userMessage = context
+    ? `${context}\n\n---\nCode to review:\n${codeContent}`
+    : `Code to review:\n${codeContent}`;
+
+  const prompt = `${SYSTEM_PROMPT}\n\n${userMessage}`;
+
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.2,
+      maxOutputTokens: 4096,
+      responseMimeType: "application/json",
+    },
+  });
+
+  const content = result.response.text();
+  if (!content) throw new Error("Empty response from Gemini");
+
+  return parseProviderResponse(content);
+}
+
+export async function reviewWithGroq(codeContent: string, context?: string): Promise<ReviewResult> {
+  if (!process.env.GROQ_API_KEY) {
+    throw new Error("Missing GROQ_API_KEY");
+  }
+
+  // Groq provides an OpenAI-compatible API
+  const client = new OpenAI({
+    apiKey: process.env.GROQ_API_KEY,
+    baseURL: "https://api.groq.com/openai/v1",
+  });
+
+  const userMessage = context
+    ? `${context}\n\n---\nCode to review:\n${codeContent}`
+    : `Code to review:\n${codeContent}`;
+
+  const response = await client.chat.completions.create({
+    model: "llama-3.3-70b-versatile",
+    messages: [
+      { role: "system", content: SYSTEM_PROMPT },
+      { role: "user", content: userMessage },
+    ],
+    temperature: 0.2,
+    max_tokens: 4096,
+    response_format: { type: "json_object" },
+  });
+
+  const content = response.choices[0]?.message?.content;
+  if (!content) throw new Error("Empty response from Groq");
+
+  return parseProviderResponse(content);
+}
+
 export async function reviewCodeFallback(codeContent: string, context?: string): Promise<ReviewResult> {
+  // Check which keys are genuinely present (not just placeholders like sk-...)
   const hasOpenAI = !!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY.includes("sk-...");
   const hasClaude = !!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_API_KEY.includes("sk-ant-...");
+  const hasGemini = !!process.env.GEMINI_API_KEY && !process.env.GEMINI_API_KEY.includes("AI...");
+  const hasGroq = !!process.env.GROQ_API_KEY && !process.env.GROQ_API_KEY.includes("gsk_...");
 
-  if (!hasOpenAI && !hasClaude) {
-    throw new Error("No API keys provided. Please set OPENAI_API_KEY or ANTHROPIC_API_KEY.");
+  if (!hasOpenAI && !hasClaude && !hasGemini && !hasGroq) {
+    throw new Error("No API keys provided. Please set OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY, or GROQ_API_KEY.");
   }
+
+  const errors: string[] = [];
 
   if (hasOpenAI) {
     try {
@@ -134,10 +201,8 @@ export async function reviewCodeFallback(codeContent: string, context?: string):
       return await reviewWithOpenAI(codeContent, context);
     } catch (error: any) {
       console.error("[llm] OpenAI failed:", error.message);
-      if (!hasClaude) {
-         throw new Error(`OpenAI Error: ${error.message} (No fallback available)`);
-      }
-      console.warn("[llm] OpenAI failed, falling back to Claude...");
+      errors.push(`OpenAI: ${error.message}`);
+      console.warn("[llm] Falling back to next provider...");
     }
   }
 
@@ -147,9 +212,32 @@ export async function reviewCodeFallback(codeContent: string, context?: string):
       return await reviewWithClaude(codeContent, context);
     } catch (error: any) {
       console.error("[llm] Claude failed:", error.message);
-      throw new Error(`Claude Error: ${error.message}`);
+      errors.push(`Claude: ${error.message}`);
+      console.warn("[llm] Falling back to next provider...");
     }
   }
 
-  throw new Error("Analysis failed: All configured providers failed.");
+  if (hasGemini) {
+    try {
+      console.log("[llm] Attempting review with Gemini...");
+      return await reviewWithGemini(codeContent, context);
+    } catch (error: any) {
+      console.error("[llm] Gemini failed:", error.message);
+      errors.push(`Gemini: ${error.message}`);
+      console.warn("[llm] Falling back to next provider...");
+    }
+  }
+
+  if (hasGroq) {
+    try {
+      console.log("[llm] Attempting review with Groq...");
+      return await reviewWithGroq(codeContent, context);
+    } catch (error: any) {
+      console.error("[llm] Groq failed:", error.message);
+      errors.push(`Groq: ${error.message}`);
+      console.warn("[llm] Falling back to next provider...");
+    }
+  }
+
+  throw new Error(`Analysis failed. All configured providers failed. Errors: ${errors.join(" | ")}`);
 }
